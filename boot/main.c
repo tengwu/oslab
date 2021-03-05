@@ -73,17 +73,27 @@ readseg(uint32_t pa, uint32_t count, uint32_t offset)
 {
 	uint32_t end_pa;
 
-	end_pa = pa + count;
+	// ebx = pa, esi = count, esi = ebx + esi 
+	end_pa = pa + count; // esi => end_pa
 
 	// round down to sector boundary
+    // NOTES: Set the bits from the 1'st significant bit to 9'nd significant
+    // bit as 0. For example: pa is 0xffff first, and pa becomes 0xfe00 after 
+    // this instruction.
+	// and $0xfffffe00, %ebx
 	pa &= ~(SECTSIZE - 1);
 
 	// translate from bytes to sectors, and kernel starts at sector 1
+	// edi = offset
+	// shr $0x9, %edi
+	// inc %edi
 	offset = (offset / SECTSIZE) + 1;
 
 	// If this is too slow, we could read lots of sectors at a time.
 	// We'd write more to memory than asked, but it doesn't matter --
 	// we load in increasing order.
+	// cmp %esi, %ebx
+	// jae 7d11 <readseg+0x37> 跳到函数结尾 jae: jump if CF == 0
 	while (pa < end_pa) {
 		// Since we haven't enabled paging yet and we're using
 		// an identity segment mapping (see boot.S), we can
