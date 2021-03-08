@@ -92,9 +92,11 @@ boot_alloc(uint32_t n)
 	// which points to the end of the kernel's bss segment:
 	// the first virtual address that the linker did *not* assign
 	// to any kernel code or global variables.
+	// end是kernel内存的结尾地址，也是虚拟内存的起始地址
 	if (!nextfree) {
 		extern char end[];
 		nextfree = ROUNDUP((char *) end, PGSIZE);
+		cprintf("boot_alloc: init nextfree end %p nextfree %p\n", end, nextfree);
 	}
 
 	// Allocate a chunk large enough to hold 'n' bytes, then update
@@ -102,8 +104,13 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
-
-	return NULL;
+	if (n == 0)
+		return nextfree;
+	result = ROUNDUP((char *) nextfree, PGSIZE);
+	nextfree = ROUNDUP((char *) result + n, PGSIZE);
+	if ((uint32_t) nextfree > KERNBASE + npages * PGSIZE)
+		panic("boot_alloc: no more available memory.");
+	return result;
 }
 
 // Set up a two-level page table:
@@ -125,12 +132,14 @@ mem_init(void)
 	i386_detect_memory();
 
 	// Remove this line when you're ready to test this function.
-	panic("mem_init: This function is not finished\n");
+	// panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
+	// 页目录表大小为一个页，边界按照PGSIZE对齐
 	kern_pgdir = (pde_t *) boot_alloc(PGSIZE);
 	memset(kern_pgdir, 0, PGSIZE);
+	cprintf("mem_init: kern_pgdir %p\n", kern_pgdir);
 
 	//////////////////////////////////////////////////////////////////////
 	// Recursively insert PD in itself as a page table, to form
@@ -148,6 +157,9 @@ mem_init(void)
 	// array.  'npages' is the number of physical pages in memory.  Use memset
 	// to initialize all fields of each struct PageInfo to 0.
 	// Your code goes here:
+	pages = (struct PageInfo *)boot_alloc(npages * sizeof(struct PageInfo));
+	memset(pages, 0, npages * sizeof(struct PageInfo));
+	cprintf("mem_init: pages %p\n", pages);
 
 
 	//////////////////////////////////////////////////////////////////////
@@ -157,6 +169,7 @@ mem_init(void)
 	// particular, we can now map memory using boot_map_region
 	// or page_insert
 	page_init();
+	panic("mem_init: This function is not finished\n");
 
 	check_page_free_list(1);
 	check_page_alloc();
@@ -251,12 +264,28 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
-	size_t i;
-	for (i = 0; i < npages; i++) {
+	// 第一页为 IDT & BIOS structure，之前已将pages的内存清0
+	size_t i = 0;
+	pages[i++].pp_ref = 1;
+	for (; i < npages_basemem; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
+	// 从 BASEMEM 到 PageInfo 数组的末尾这段内存全部不可分配
+	size_t npages_pageinfo;
+	npages_pageinfo = ((size_t)pages - KERNBASE + 
+					npages * sizeof(struct PageInfo)) / PGSIZE;
+	for (; i < npages_pageinfo; i++)
+		pages[i].pp_ref = 1;
+	// 其余的内存均为 free，一共有 PGSIZE 个 page，即 4GB 内存
+	for (; i < PGSIZE; i++) {
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+	assert(pages[npages_basemem-1].pp_ref == 0);
+	assert(pages[npages_basemem].pp_ref == 1);
 }
 
 //
