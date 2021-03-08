@@ -169,10 +169,10 @@ mem_init(void)
 	// particular, we can now map memory using boot_map_region
 	// or page_insert
 	page_init();
-	panic("mem_init: This function is not finished\n");
 
 	check_page_free_list(1);
 	check_page_alloc();
+	panic("mem_init: This function is not finished\n");
 	check_page();
 
 	//////////////////////////////////////////////////////////////////////
@@ -304,7 +304,17 @@ struct PageInfo *
 page_alloc(int alloc_flags)
 {
 	// Fill this function in
-	return 0;
+	if (NULL == page_free_list) {
+		cprintf("page_alloc: out of memory\n");
+		return NULL;
+	}
+	struct PageInfo * page_allocated = page_free_list;
+	page_free_list = page_allocated->pp_link;
+	page_allocated->pp_link = NULL;
+	if (alloc_flags & ALLOC_ZERO)
+		memset(page2kva(page_allocated), '\0', PGSIZE);
+
+	return page_allocated; 
 }
 
 //
@@ -317,6 +327,10 @@ page_free(struct PageInfo *pp)
 	// Fill this function in
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
+	if (0 != pp->pp_ref || NULL != pp->pp_link)
+		panic("page_free: couldn't free this page");
+	pp->pp_link = page_free_list;
+	page_free_list = pp;	
 }
 
 //
