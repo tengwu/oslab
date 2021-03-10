@@ -172,8 +172,8 @@ mem_init(void)
 
 	check_page_free_list(1);
 	check_page_alloc();
-	// panic("mem_init: This function is not finished\n");
 	check_page();
+	panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory
