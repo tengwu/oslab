@@ -172,7 +172,7 @@ mem_init(void)
 
 	check_page_free_list(1);
 	check_page_alloc();
-	panic("mem_init: This function is not finished\n");
+	// panic("mem_init: This function is not finished\n");
 	check_page();
 
 	//////////////////////////////////////////////////////////////////////
@@ -274,18 +274,15 @@ page_init(void)
 	}
 	// 从 BASEMEM 到 PageInfo 数组的末尾这段内存全部不可分配
 	size_t npages_pageinfo;
-	npages_pageinfo = ((size_t)pages - KERNBASE + 
-					npages * sizeof(struct PageInfo)) / PGSIZE;
+	npages_pageinfo = PADDR(boot_alloc(0)) / PGSIZE;
 	for (; i < npages_pageinfo; i++)
 		pages[i].pp_ref = 1;
-	// 其余的内存均为 free，一共有 PGSIZE 个 page，即 4GB 内存
-	for (; i < PGSIZE; i++) {
+	// 其余的内存均为 free，一共有 npages 个 page
+	for (; i < npages; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
-	assert(pages[npages_basemem-1].pp_ref == 0);
-	assert(pages[npages_basemem].pp_ref == 1);
 }
 
 //
@@ -312,7 +309,7 @@ page_alloc(int alloc_flags)
 	page_free_list = page_allocated->pp_link;
 	page_allocated->pp_link = NULL;
 	if (alloc_flags & ALLOC_ZERO)
-		memset(page2kva(page_allocated), '\0', PGSIZE);
+		memset(page2kva(page_allocated), 0, PGSIZE);
 
 	return page_allocated; 
 }
@@ -370,7 +367,35 @@ pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
 	// Fill this function in
-	return NULL;
+	pte_t *ret = NULL;
+	pde_t *page_dir_entry = &pgdir[PDX((uintptr_t) va)];
+	if (*page_dir_entry & PTE_P) {
+		// 找到二级页表
+		pte_t *page_table_entry = KADDR(PTE_ADDR(*page_dir_entry));
+		// 找到 page table entry
+		ret = &page_table_entry[PTX(va)];
+	}
+	else if (create) {
+		// 分配一个页用来作为一个新的二级页表
+		struct PageInfo *page = page_alloc(1);
+		if (NULL == page) {
+			cprintf("pgdir_walk: failed to alloc a page\n");
+			return NULL;
+		}
+		page->pp_ref = 1;
+		// page_dir_entry 高20位放的是对应页框的物理地址
+		// page2pa 返回的地址后12位都为0，可以直接和其它有效位进行或操作
+		*page_dir_entry = page2pa(page) | PTE_P | PTE_W | PTE_U;
+		// 清空二级页表
+		pte_t *page_table = (pte_t *)page2kva(page);
+		memset(page_table, 0, PGSIZE);
+		// 返回二级页表中的page table entry
+		ret = &page_table[PTX(va)];
+	}
+	else
+		cprintf("pgdir_walk: the page doesn't exist\n");
+
+	return ret;
 }
 
 //
@@ -388,6 +413,14 @@ static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
+	uintptr_t offset;
+	for (offset = 0; offset < size; offset += PGSIZE) {
+		pte_t *page_table_entry = pgdir_walk(pgdir, (const void *)(va+offset), 1);
+		if (NULL == page_table_entry)
+			panic("boot_map_region: out of memory");
+		// page_table_entry 高20位放的是对应页框的物理地址
+		*page_table_entry = (pa+offset) | perm | PTE_P;
+	}
 }
 
 //
@@ -419,6 +452,13 @@ int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
 	// Fill this function in
+	pte_t *page_table_entry = pgdir_walk(pgdir, va, 1);
+	if (NULL == page_table_entry)
+		return -E_NO_MEM;
+	pp->pp_ref++;
+	if (*page_table_entry & PTE_P)
+		page_remove(pgdir, va);
+	*page_table_entry = page2pa(pp) | perm | PTE_P;
 	return 0;
 }
 
@@ -437,7 +477,14 @@ struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
 	// Fill this function in
-	return NULL;
+	pte_t *page_table_entry = pgdir_walk(pgdir, va, 0);
+	if (NULL == page_table_entry || !(*page_table_entry & PTE_P)) {
+		cprintf("page_lookup: no valid page found\n");
+		return NULL;
+	}
+	if (NULL != pte_store)
+		*pte_store = page_table_entry;
+	return pa2page(*page_table_entry);
 }
 
 //
@@ -459,6 +506,14 @@ void
 page_remove(pde_t *pgdir, void *va)
 {
 	// Fill this function in
+	pte_t *page_table_entry = NULL;
+	struct PageInfo *page = page_lookup(pgdir, va, &page_table_entry);
+	if (NULL == page)
+		// no physical page at that address
+		return ;
+	page_decref(page);
+	*page_table_entry = 0;
+	tlb_invalidate(pgdir, va);
 }
 
 //
@@ -676,7 +731,7 @@ check_kern_pgdir(void)
 static physaddr_t
 check_va2pa(pde_t *pgdir, uintptr_t va)
 {
-	pte_t *p;
+	volatile pte_t *p;
 
 	pgdir = &pgdir[PDX(va)];
 	if (!(*pgdir & PTE_P))
