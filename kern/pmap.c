@@ -177,7 +177,6 @@ mem_init(void)
 	// particular, we can now map memory using boot_map_region
 	// or page_insert
 	page_init();
-
 	check_page_free_list(1);
 	check_page_alloc();
 	check_page();
@@ -571,6 +570,18 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+	uintptr_t vas = (uintptr_t)ROUNDDOWN(va, PGSIZE);
+	size_t offset;
+	size_t len_aligned = (size_t)ROUNDUP(len, PGSIZE);
+	struct PageInfo *page;
+	pte_t *pte;
+	for (offset = 0; offset < len_aligned; offset += PGSIZE) {
+		pte = pgdir_walk(env->env_pgdir, (void *)(vas+offset), 0);
+		if (((uint32_t)vas+offset-1 > ULIM) || ((*pte & (perm | PTE_P)) != (perm | PTE_P))) {
+			user_mem_check_addr = (uintptr_t)va > (uintptr_t)vas+offset ? (uintptr_t)va : (uintptr_t) vas+offset;
+			return -E_FAULT;
+		}
+	}
 
 	return 0;
 }
