@@ -13,6 +13,7 @@ static inline uint8_t
 inb(int port)
 {
 	uint8_t data;
+    // inb dx, eax  input a byte from port to data
 	asm volatile("inb %w1,%0" : "=a" (data) : "d" (port));
 	return data;
 }

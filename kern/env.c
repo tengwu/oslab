@@ -119,6 +119,12 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
+	size_t i;
+	// 在mem_init里已经将envs的内存清零
+	env_free_list = &envs[0];
+	for (i = 0; i < NENV-1; i++)
+		envs[i].env_link = &envs[i+1];
+	envs[NENV-1].env_link = NULL;
 
 	// Per-CPU part of the initialization
 	env_init_percpu();
@@ -182,6 +188,10 @@ env_setup_vm(struct Env *e)
 	//    - The functions in kern/pmap.h are handy.
 
 	// LAB 3: Your code here.
+	// 设置env_pgdir为kernel virtual address
+	e->env_pgdir = page2kva(p);
+	memcpy(e->env_pgdir, kern_pgdir, PGSIZE);
+	p->pp_ref++;
 
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
@@ -279,6 +289,16 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
 	//   (Watch out for corner-cases!)
+	size_t offset;
+	va = ROUNDDOWN(va, PGSIZE);
+	len = ROUNDUP(va+len, PGSIZE)-va;
+	for (offset = 0; offset < len; offset += PGSIZE) {
+		// 不将内存清零
+		struct PageInfo *page = page_alloc(0);
+		if (NULL == page)
+			panic("region_alloc: out of memory");
+		page_insert(e->env_pgdir, page, va+offset, PTE_U | PTE_W | PTE_P);
+	}
 }
 
 //
@@ -333,6 +353,35 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  You must also do something with the program's entry point,
 	//  to make sure that the environment starts executing there.
 	//  What?  (See env_run() and env_pop_tf() below.)
+	struct Elf *elfhdr = (struct Elf *) binary;
+	struct Proghdr *ph, *eph;
+
+	// is this a valid ELF?
+	if (elfhdr->e_magic != ELF_MAGIC)
+		panic("load_icode: not a valid ELF format");
+
+	// load each program segment (ignores ph flags)
+	ph = (struct Proghdr *) ((uint8_t *) elfhdr + elfhdr->e_phoff);
+	eph = ph + elfhdr->e_phnum;
+	// 目前使用的是 kern_kernel，如果直接向其虚拟地址空间写入数据会出错，要先切换到 e 的地址空间
+	lcr3(PADDR(e->env_pgdir));
+	for (; ph < eph; ph++) {
+		// ph->p_type segment的类型 ph->p_va 虚拟地址 ph->p_memsz 大小
+		// ph->p_filesz 字节的数据需要从 binary+ph->p_offset 的位置拷贝到ph->p_va的位置 
+		// 如果 ph->p_filesz < ph->p_memsz，将其余内存清零
+		// 如果ph->p_filesz > ph->p_memsz panic
+		// page 的权限是 user r/w
+		if (ph->p_type == ELF_PROG_LOAD) {
+			// TODO: maybe bug here
+			if (ph->p_filesz > ph->p_memsz)
+				panic("load_icode: not a valid ELF format");
+			region_alloc(e, (void *) ph->p_va, ph->p_memsz);
+			memcpy((void *)ph->p_va, binary+ph->p_offset, ph->p_filesz);
+			memset((uint8_t *)ph->p_va+ph->p_filesz, 0, ph->p_memsz-ph->p_filesz);
+		}
+	}
+	// 数据复制完成后，切换回内核的虚拟地址空间
+	lcr3(PADDR(kern_pgdir));
 
 	// LAB 3: Your code here.
 
@@ -340,6 +389,8 @@ load_icode(struct Env *e, uint8_t *binary)
 	// at virtual address USTACKTOP - PGSIZE.
 
 	// LAB 3: Your code here.
+	region_alloc(e, (void *) (USTACKTOP - PGSIZE), PGSIZE);
+	e->env_tf.tf_eip = elfhdr->e_entry;
 }
 
 //
@@ -353,6 +404,13 @@ void
 env_create(uint8_t *binary, enum EnvType type)
 {
 	// LAB 3: Your code here.
+	struct Env *e;
+	if (env_alloc(&e, 0) < 0)
+		panic("env_create: error occurred when env_alloc");
+
+	e->env_type = ENV_TYPE_USER; 
+
+	load_icode(e, binary);
 }
 
 //
@@ -483,7 +541,14 @@ env_run(struct Env *e)
 	//	e->env_tf to sensible values.
 
 	// LAB 3: Your code here.
-
+	if (NULL != curenv && ENV_RUNNING == curenv->env_status)
+		// this is a context switch
+		curenv->env_status = ENV_RUNNABLE;
+	curenv = e;
+	curenv->env_status = ENV_RUNNING;
+	curenv->env_runs++; // number of times the env has run
+	lcr3(PADDR(curenv->env_pgdir));
+	env_pop_tf(&curenv->env_tf);
 	panic("env_run not yet implemented");
 }
 
