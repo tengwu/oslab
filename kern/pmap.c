@@ -277,7 +277,13 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+	uintptr_t kstacktop = KSTACKTOP;
+	uintptr_t kstackbottom = KSTACKTOP - KSTKSIZE;
+	uintptr_t kstack_btm_gap = KSTKGAP + KSTKSIZE;
+	int i;
+	for (i = 0 ; i < NCPU; i++)
+		boot_map_region(kern_pgdir, kstackbottom - kstack_btm_gap * i, 
+						KSTKSIZE, PADDR(percpu_kstacks[i]), PTE_W);
 }
 
 // --------------------------------------------------------------
@@ -318,8 +324,11 @@ page_init(void)
 	// free pages!
 	// 第一页为 IDT & BIOS structure，之前已将pages的内存清0
 	size_t i = 0;
+	size_t pg_at_mpentry_idx = MPENTRY_PADDR / PGSIZE;
 	pages[i++].pp_ref = 1;
 	for (; i < npages_basemem; i++) {
+		if (i == pg_at_mpentry_idx)
+			continue;
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
@@ -592,6 +601,7 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// beginning of the MMIO region.  Because this is static, its
 	// value will be preserved between calls to mmio_map_region
 	// (just like nextfree in boot_alloc).
+	// static 变量只会被初始化一次
 	static uintptr_t base = MMIOBASE;
 
 	// Reserve size bytes of virtual memory starting at base and
@@ -612,7 +622,13 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	uintptr_t ret = ROUNDUP(base, PGSIZE);
+	size = ROUNDUP(size, PGSIZE);
+	if (ret+size >= MMIOLIM)
+		panic("mmio_map_region: this reservation will overflow MMIOLIM");
+	boot_map_region(kern_pgdir, ret, size, pa, PTE_PCD|PTE_PWT|PTE_W);
+	base = ret + size;
+	return (void *)ret;
 }
 
 static uintptr_t user_mem_check_addr;
