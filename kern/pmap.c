@@ -95,7 +95,7 @@ boot_alloc(uint32_t n)
 	// which points to the end of the kernel's bss segment:
 	// the first virtual address that the linker did *not* assign
 	// to any kernel code or global variables.
-	// end是kernel内存的结尾地址，也是虚拟内存的起始地址
+	// end是kernel内存的结尾地址，也是虚拟内存的起始地址，是通过 kernel.ld 设置的
 	if (!nextfree) {
 		extern char end[];
 		nextfree = ROUNDUP((char *) end, PGSIZE);
@@ -109,10 +109,11 @@ boot_alloc(uint32_t n)
 	// LAB 2: Your code here.
 	if (n == 0)
 		return nextfree;
-	result = ROUNDUP((char *) nextfree, PGSIZE);
+	// 这里不用 ROUNDUP nextfree 因为 nextfree 本来就是按照 PGSIZE 对齐的
+	result = nextfree;
 	nextfree = ROUNDUP((char *) result + n, PGSIZE);
-	if ((uint32_t) nextfree > KERNBASE + npages * PGSIZE)
-		panic("boot_alloc: no more available memory.");
+	if (((uint32_t) nextfree - KERNBASE) > npages * PGSIZE)
+		panic("boot_alloc: out of memory");
 	return result;
 }
 
@@ -133,9 +134,6 @@ mem_init(void)
 
 	// Find out how much memory the machine has (npages & npages_basemem).
 	i386_detect_memory();
-
-	// Remove this line when you're ready to test this function.
-	// panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
@@ -193,6 +191,7 @@ mem_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
+	cprintf("upages: %p\n", UPAGES);
 	boot_map_region(kern_pgdir, UPAGES, PTSIZE, PADDR(pages), PTE_U);
 
 	//////////////////////////////////////////////////////////////////////
@@ -202,6 +201,7 @@ mem_init(void)
 	//    - the new image at UENVS  -- kernel R, user R
 	//    - envs itself -- kernel RW, user NONE
 	// LAB 3: Your code here.
+	cprintf("uenvs: %p\n", UENVS);
 	boot_map_region(kern_pgdir, UENVS, NENV * sizeof(struct Env), PADDR(envs), PTE_U | PTE_P);
 
 	//////////////////////////////////////////////////////////////////////
@@ -215,6 +215,7 @@ mem_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
+	cprintf("bootstack: %p\n", KSTACKTOP-KSTKSIZE);
 	boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
 
 	//////////////////////////////////////////////////////////////////////
@@ -622,7 +623,7 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	uintptr_t ret = ROUNDUP(base, PGSIZE);
+	uintptr_t ret = base;
 	size = ROUNDUP(size, PGSIZE);
 	if (ret+size >= MMIOLIM)
 		panic("mmio_map_region: this reservation will overflow MMIOLIM");
