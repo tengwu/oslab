@@ -663,7 +663,9 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 	pte_t *pte;
 	for (offset = 0; offset < len_aligned; offset += PGSIZE) {
 		pte = pgdir_walk(env->env_pgdir, (void *)(vas+offset), 0);
-		if (((uint32_t)vas+offset-1 > ULIM) || ((*pte & (perm | PTE_P)) != (perm | PTE_P))) {
+		if (((uint32_t)vas+offset+1 > ULIM) ||
+				!pte || // 之前没有检查 pte 是否为空, Lab 4 修复了这个 bug
+				((*pte & (perm | PTE_P)) != (perm | PTE_P))) {
 			user_mem_check_addr = (uintptr_t)va > (uintptr_t)vas+offset ? (uintptr_t)va : (uintptr_t) vas+offset;
 			return -E_FAULT;
 		}
