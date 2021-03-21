@@ -257,6 +257,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
+	e->env_tf.tf_eflags |= FL_IF;
 
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
@@ -353,6 +354,8 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  You must also do something with the program's entry point,
 	//  to make sure that the environment starts executing there.
 	//  What?  (See env_run() and env_pop_tf() below.)
+
+	// LAB 3: Your code here.
 	struct Elf *elfhdr = (struct Elf *) binary;
 	struct Proghdr *ph, *eph;
 
@@ -382,8 +385,6 @@ load_icode(struct Env *e, uint8_t *binary)
 	}
 	// 数据复制完成后，切换回内核的虚拟地址空间
 	lcr3(PADDR(kern_pgdir));
-
-	// LAB 3: Your code here.
 
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
