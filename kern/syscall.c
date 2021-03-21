@@ -380,7 +380,7 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		case SYS_env_destroy: {
 			if (curenv == NULL)
 				panic("syscall: no env is running");
-			return sys_env_destroy(curenv->env_id);
+			return sys_env_destroy((envid_t)a1);
 		}
 		case SYS_yield: {
 			sys_yield();
