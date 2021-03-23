@@ -67,6 +67,8 @@ entry:
 	# C code.
 	mov	$relocated, %eax
 	jmp	*%eax
+	# for test
+	# ljmp $0x8, $relocated
 relocated:
 
 	# Clear the frame pointer register (EBP)
@@ -91,7 +93,7 @@ spin:	jmp	spin
 	.p2align	PGSHIFT		# force page alignment
 	.globl		bootstack
 bootstack:
-	.space		KSTKSIZE
+	.space		KSTKSIZE    # 8 pages 8*4096
 	.globl		bootstacktop   
 bootstacktop:
 

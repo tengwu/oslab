@@ -47,10 +47,62 @@
 /*
  * Lab 3: Your code here for generating entry points for the different traps.
  */
+	TRAPHANDLER_NOEC(trap_divide, T_DIVIDE)
+	TRAPHANDLER_NOEC(trap_debug, T_DEBUG)
+	TRAPHANDLER_NOEC(trap_nmi, T_NMI)
+	TRAPHANDLER_NOEC(trap_brkpt, T_BRKPT)
+	TRAPHANDLER_NOEC(trap_oflow, T_OFLOW)
+	TRAPHANDLER_NOEC(trap_bound, T_BOUND)
+	TRAPHANDLER_NOEC(trap_illop, T_ILLOP)
+	TRAPHANDLER_NOEC(trap_device, T_DEVICE)
+	TRAPHANDLER(trap_dblflt, T_DBLFLT)
+	/* TRAPHANDLER_NOEC(trap_coproc, T_COPROC) */ /* reserved */
+	TRAPHANDLER(trap_tss, T_TSS)
+	TRAPHANDLER(trap_segnp, T_SEGNP)
+	TRAPHANDLER(trap_stack, T_STACK)
+	TRAPHANDLER(trap_gpflt, T_GPFLT)
+	TRAPHANDLER(trap_pgflt, T_PGFLT)
+	/* TRAPHANDLER_NOEC(trap_res, T_RES) */ /* reserved */
+	TRAPHANDLER_NOEC(trap_fperr, T_FPERR)
+	TRAPHANDLER_NOEC(trap_align, T_ALIGN)
+	TRAPHANDLER_NOEC(trap_mchk, T_MCHK)
+	TRAPHANDLER_NOEC(trap_simderr, T_SIMDERR)
 
+	TRAPHANDLER_NOEC(trap_syscall, T_SYSCALL)
+
+	TRAPHANDLER_NOEC(trap_IRQ_TIMER, IRQ_OFFSET+IRQ_TIMER)
+	TRAPHANDLER_NOEC(trap_IRQ_KBD, IRQ_OFFSET+IRQ_KBD)
+	TRAPHANDLER_NOEC(trap_IRQ_2, IRQ_OFFSET+2)
+	TRAPHANDLER_NOEC(trap_IRQ_3, IRQ_OFFSET+3)
+	TRAPHANDLER_NOEC(trap_IRQ_SERIAL, IRQ_OFFSET+IRQ_SERIAL)
+	TRAPHANDLER_NOEC(trap_IRQ_5, IRQ_OFFSET+5)
+	TRAPHANDLER_NOEC(trap_IRQ_6, IRQ_OFFSET+6)
+	TRAPHANDLER_NOEC(trap_IRQ_SPURIOUS, IRQ_OFFSET+IRQ_SPURIOUS)
+	TRAPHANDLER_NOEC(trap_IRQ_8, IRQ_OFFSET+8)
+	TRAPHANDLER_NOEC(trap_IRQ_9, IRQ_OFFSET+9)
+	TRAPHANDLER_NOEC(trap_IRQ_10, IRQ_OFFSET+10)
+	TRAPHANDLER_NOEC(trap_IRQ_11, IRQ_OFFSET+11)
+	TRAPHANDLER_NOEC(trap_IRQ_12, IRQ_OFFSET+12)
+	TRAPHANDLER_NOEC(trap_IRQ_13, IRQ_OFFSET+13)
+	TRAPHANDLER_NOEC(trap_IRQ_IDE, IRQ_OFFSET+IRQ_IDE)
+	TRAPHANDLER_NOEC(trap_IRQ_15, IRQ_OFFSET+15)
+	TRAPHANDLER_NOEC(trap_IRQ_ERROR, IRQ_OFFSET+IRQ_ERROR)
 
 
 /*
  * Lab 3: Your code here for _alltraps
  */
+_alltraps:
+	/* push values to make the stack look like a struct Trapframe */
+	pushl %ds
+	pushl %es
+	pushal
+	/* load GD_KD into %ds and %es */
+	movl $GD_KD, %eax
+	movw %ax, %ds
+	movw %ax, %es
+	/* pushl %esp to pass a pointer to the Trapframe as an argument to trap() */
+	pushl %esp
+	/* call trap(can trap ever return?) */
+	call trap
 
